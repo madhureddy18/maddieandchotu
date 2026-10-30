@@ -98,12 +98,15 @@ def main():
     urls = [u for u in public_urls(video) if reachable(u)]
     if not urls:
         raise SystemExit("The video isn't publicly reachable yet (is GitHub Pages on? wait a minute after pushing)")
-    if os.environ.get("DRY_RUN") == "1":
-        print("dry run - would post from", urls[0])
-        return 0
     token = os.environ.get("IG_TOKEN", "").strip()
     if not token:
         raise SystemExit("MADDIEANDCHOTUIGTOKEN secret is missing (Settings > Secrets and variables > Actions)")
+    if os.environ.get("DRY_RUN") == "1":
+        me = requests.get(f"{GRAPH}/{VER}/me", params={"fields": "username", "access_token": token}, timeout=30)
+        if not me.ok:
+            raise SystemExit("Instagram rejected the token - " + err(me))
+        print(f"dry run OK - token works for @{me.json().get('username')}, would post from", urls[0])
+        return 0
     last = None
     for url in urls:
         try:
