@@ -1,6 +1,8 @@
 """Post Reels to Instagram (@maddieandchotu). Runs on GitHub Actions, driven by the website (index.html).
 
-queue/<id>.mp4 + queue/<id>.json  {"caption": "...", "at": "2026-10-31T08:00:00+05:30" | null, "name": "..."}
+queue/<id>.mp4 + queue/<id>.json + optional queue/<id>.jpg (cover)
+  json: {"title", "caption", "hashtags": [max 5], "first_comment", "keywords", "audio_name", "thumb_offset" (ms),
+         "at": "2026-10-31T08:00:00+05:30" | null, "name"}
   - at = null      -> draft, never posted automatically
   - at = a time    -> posted by the scheduled check once that time has passed
   - "Post now"     -> the website starts this workflow with the item's id
@@ -66,8 +68,18 @@ def due_items():
     return out
 
 
+def full_caption(meta):
+    """Caption text + up to 5 hashtags (Instagram's limit)."""
+    cap = (meta.get("caption") or "").strip()
+    tags = [t.strip().lstrip("#").replace(" ", "") for t in (meta.get("hashtags") or []) if t.strip().lstrip("#")]
+    tags = list(dict.fromkeys(tags))[:5]
+    if tags:
+        cap = (cap + "\n\n" + " ".join("#" + t for t in tags)).strip()
+    return cap[:2200]
+
+
 def public_url(video):
-    """GitHub Pages link to the video; waits a few minutes for Pages to publish a fresh upload."""
+    """GitHub Pages link to a queued file; waits a few minutes for Pages to publish a fresh upload."""
     owner, repo = os.environ["GITHUB_REPOSITORY"].split("/")
     rel = video.relative_to(ROOT).as_posix()
     pages = f"https://{owner.lower()}.github.io/{repo}/{rel}"
@@ -85,7 +97,7 @@ def public_url(video):
     return raw
 
 
-def publish(token, video_url, caption):
+def publish(token, video_url, caption, extra=None):
     me = requests.get(f"{GRAPH}/{VER}/me", params={"fields": "user_id,username", "access_token": token}, timeout=30)
     if not me.ok:
         raise RuntimeError("Instagram rejected the token - " + err(me))
@@ -93,7 +105,8 @@ def publish(token, video_url, caption):
     print(f"posting as @{me.json().get('username')}", flush=True)
     h = {"Authorization": f"Bearer {token}"}
     r = requests.post(f"{GRAPH}/{VER}/{uid}/media", headers=h, timeout=60,
-                      json={"media_type": "REELS", "video_url": video_url, "caption": caption[:2200], "share_to_feed": True})
+                      json={"media_type": "REELS", "video_url": video_url, "caption": caption[:2200], "share_to_feed": True,
+                            **(extra or {})})
     if not r.ok:
         raise RuntimeError("Instagram didn't accept the video - " + err(r))
     cid = r.json()["id"]
@@ -119,26 +132,46 @@ def publish(token, video_url, caption):
         raise RuntimeError("Instagram publish failed - " + err(p))
     mid = p.json()["id"]
     q = requests.get(f"{GRAPH}/{VER}/{mid}", headers=h, params={"fields": "permalink"}, timeout=30)
-    return q.json().get("permalink", "") if q.ok else ""
+    return mid, (q.json().get("permalink", "") if q.ok else "")
+
+
+def comment(token, mid, text):
+    r = requests.post(f"{GRAPH}/{VER}/{mid}/comments", headers={"Authorization": f"Bearer {token}"},
+                      json={"message": text[:2200]}, timeout=30)
+    return "" if r.ok else err(r)
 
 
 def post_one(token, video, meta):
     jf = video.with_suffix(".json")
+    extra = {}
+    cover = video.with_suffix(".jpg")
+    if cover.exists():
+        extra["cover_url"] = public_url(cover)
+    elif meta.get("thumb_offset"):
+        extra["thumb_offset"] = int(meta["thumb_offset"])
+    if meta.get("audio_name"):
+        extra["audio_name"] = meta["audio_name"][:100]
     try:
-        link = publish(token, public_url(video), meta.get("caption", ""))
+        mid, link = publish(token, public_url(video), full_caption(meta), extra)
     except Exception as e:
         meta.update(status="failed", error=str(e)[:300], tried=now().isoformat(timespec="seconds"))
         save(jf, meta)
         print("FAILED:", e)
         return False
     print("POSTED:", link)
+    cerr = ""
+    if (meta.get("first_comment") or "").strip():
+        cerr = comment(token, mid, meta["first_comment"].strip())
+        print("first comment:", "added" if not cerr else "skipped - " + cerr)
     hist = load(POSTED) if POSTED.exists() else []
     hist = hist if isinstance(hist, list) else []
-    hist.insert(0, {"id": video.stem, "name": meta.get("name", ""), "caption": meta.get("caption", ""),
-                    "url": link, "posted": now().isoformat(timespec="seconds")})
+    hist.insert(0, {"id": video.stem, "name": meta.get("name", ""), "title": meta.get("title", ""),
+                    "caption": full_caption(meta), "url": link, "posted": now().isoformat(timespec="seconds"),
+                    **({"comment_error": cerr} if cerr else {})})
     save(POSTED, hist)
     video.unlink()
     jf.unlink(missing_ok=True)
+    cover.unlink(missing_ok=True)
     return True
 
 

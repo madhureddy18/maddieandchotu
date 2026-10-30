@@ -14,7 +14,8 @@ a{color:var(--accent)}
 .wrap{max-width:760px;margin:0 auto;padding:16px 16px 80px}
 header{display:flex;align-items:center;gap:10px;padding:6px 0 18px}
 .logo{width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe08a,#ffc53d 55%,#d99a0b);box-shadow:0 0 18px #ffc53d55;flex:none}
-h1{font-size:19px;margin:0;line-height:1.2} h1 small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+h1{font-size:18px;margin:0;line-height:1.2;min-width:0}
+header button{padding:9px 11px;white-space:nowrap;flex:none} h1 small{display:block;font-size:12px;color:var(--muted);font-weight:500}
 h2{font-size:16px;margin:0 0 10px}
 .spacer{flex:1}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
@@ -39,6 +40,17 @@ label.lbl{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
 video{width:100%;max-height:420px;border-radius:12px;background:#000;margin-top:10px}
 .runs div{display:flex;gap:8px;align-items:center;font-size:13px;padding:6px 0;border-top:1px solid var(--line)}
 .runs div:first-child{border-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.tile{display:block;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;text-decoration:none;color:inherit}
+.tile:active{transform:scale(.98)}
+.thumb{aspect-ratio:9/16;background:#000;display:flex;align-items:center;justify-content:center;font-size:40px;max-height:300px;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.tmeta{padding:10px}.ttitle{font-weight:700;font-size:14px;margin:6px 0 2px;line-height:1.3}
+.media{display:grid;grid-template-columns:1fr 120px;gap:12px;align-items:start;margin-top:10px}.media video{margin-top:0}
+.cover{width:120px;border-radius:10px;border:1px solid var(--line)}
+@media (max-width:480px){.media{grid-template-columns:1fr}.cover{width:110px}}
+.preview{white-space:pre-wrap;background:var(--bg);border:1px dashed var(--line);border-radius:12px;padding:12px;font-size:14px}
+details summary{cursor:pointer;list-style:none}details summary::-webkit-details-marker{display:none}
 </style>
 </head>
 <body>
@@ -110,13 +122,17 @@ async function load(){
   const items = await Promise.all(vids.map(async v => {
     const id = v.name.slice(0, -4), j = list.find(f => f.name === id + ".json");
     let meta = {}; if (j) { try { meta = JSON.parse(await gh(R + "/contents/queue/" + j.name + "?ref=main", { raw: true })); } catch(e){} }
-    return { id, size: v.size, ...meta };
+    return { ...meta, id, size: v.size, hasCover: list.some(f => f.name === id + ".jpg") };
   }));
-  items.sort((a, b) => (a.at || "9999") < (b.at || "9999") ? -1 : 1);
+  items.sort((a, b) => (a.at || "9999") < (b.at || "9999") ? -1 : (a.at || "9999") > (b.at || "9999") ? 1 : (a.created || "") < (b.created || "") ? -1 : 1);
   let posted = []; try { posted = JSON.parse((await gh(R + "/contents/posted.json?ref=main", { raw: true, allow404: true })) || "[]"); } catch(e){}
   let runs = []; try { runs = (await gh(R + "/actions/workflows/post.yml/runs?per_page=30")).workflow_runs.filter(r => r.event === "workflow_dispatch" || r.conclusion === "failure").slice(0, 5); } catch(e){}
   return { items, posted, runs };
 }
+const tagsOf = str => [...new Set((str || "").split(/[\s,]+/).map(t => t.replace(/^#+/, "").replace(/[^\p{L}\p{N}_]/gu, "")).filter(Boolean))];
+const fullCaption = m => { const tags = (m.hashtags || []).slice(0, 5); return ((m.caption || "").trim() + (tags.length ? "\n\n" + tags.map(t => "#" + t).join(" ") : "")).trim(); };
+const coverUrl = m => m.hasCover ? `${PAGES}/queue/${encodeURIComponent(m.id)}.jpg` : "";
+const chipOf = m => m.status === "failed" ? `<span class="chip bad">Failed</span>` : m.at ? `<span class="chip wait">Scheduled</span>` : `<span class="chip">Draft</span>`;
 
 function tokenPage(msg){
   clearInterval(timer);
@@ -126,57 +142,117 @@ function tokenPage(msg){
     <input id="tok" type="password" placeholder="github_pat_..." style="margin-top:12px" autocomplete="off">
     <button class="primary" id="go" style="margin-top:10px;width:100%">Connect</button></div>`;
   $("#go").onclick = async () => { TOKEN = $("#tok").value.trim(); if (!TOKEN) return;
-    try { await gh(R); store.set("mc_token", TOKEN); main(); } catch(e){ tokenPage(e.message); } };
+    try { await gh(R); store.set("mc_token", TOKEN); route(); } catch(e){ tokenPage(e.message); } };
 }
-const head = () => `<header><div class="logo"></div><h1>Maddie & Chotu Studio<small>@maddieandchotu · Instagram</small></h1><span class="spacer"></span>
-  ${TOKEN ? `<button class="ghost" onclick="main()" aria-label="Refresh">↻</button><button class="ghost" onclick="logout()">Log out</button>` : ""}</header>`;
+const head = (back) => `<header>${back ? `<button class="ghost" onclick="location.hash='#/'" aria-label="Back">←</button>` : `<div class="logo"></div>`}<h1>Maddie & Chotu Studio<small>@maddieandchotu · Instagram</small></h1><span class="spacer"></span>
+  ${TOKEN ? `<button class="ghost" onclick="refresh()" aria-label="Refresh">↻</button>${back ? "" : `<button class="ghost" onclick="logout()">Log out</button>`}` : ""}</header>`;
 function logout(){ if (!confirm("Log out on this device?")) return; store.set("mc_token", null); TOKEN = ""; tokenPage(); }
+async function refresh(){ DATA = null; route(); }
 
-let MODE = "draft";
-async function main(){
+async function getData(force){
+  if (!DATA || force) DATA = await load();
+  return DATA;
+}
+async function route(){
   clearInterval(timer);
   if (!TOKEN) return tokenPage();
-  if (!DATA) app.innerHTML = head() + `<div class="card muted">Loading…</div>`;
-  try { DATA = await load(); } catch(e){ if (/token/.test(e.message)) return tokenPage(e.message); app.innerHTML = head() + `<div class="card">${esc(e.message)}</div>`; return; }
+  const m = location.hash.match(/^#\/i\/([\w-]+)/);
+  if (!DATA) app.innerHTML = head(!!m) + `<div class="card muted">Loading…</div>`;
+  try { await getData(); } catch(e){ if (/token/.test(e.message)) return tokenPage(e.message); app.innerHTML = head(!!m) + `<div class="card">${esc(e.message)}</div>`; return; }
+  m ? itemPage(m[1]) : home();
+}
+window.onhashchange = route;
+const main = () => { DATA = null; route(); };
+
+let MODE = "draft";
+function home(){
   const { items, posted, runs } = DATA;
   const running = runs.some(r => r.status !== "completed");
-  const chip = m => m.status === "failed" ? `<span class="chip bad">Failed</span>` : m.at ? `<span class="chip wait">Scheduled</span>` : `<span class="chip">Draft</span>`;
   app.innerHTML = head() + `
-  <div class="card"><h2>➕ New Reel</h2>
-    <input type="file" id="file" accept="video/mp4,video/*">
-    <label class="lbl">Caption + hashtags</label>
-    <textarea id="cap">${esc(DEFAULT_CAP)}</textarea>
+  <h2 style="margin:4px 2px 10px">Ready to post (${items.length})</h2>
+  ${items.length ? `<div class="grid">${items.map(m => `<a class="tile" href="#/i/${m.id}">
+      <div class="thumb">${m.hasCover ? `<img src="${coverUrl(m)}" alt="" loading="lazy">` : `<span>🎬</span>`}</div>
+      <div class="tmeta">${chipOf(m)}<div class="ttitle">${esc(m.title || m.name || m.id)}</div>
+      <div class="small muted">${m.at ? "⏰ " + esc(fmt(m.at)) : "Tap to post or schedule"}</div></div></a>`).join("")}</div>`
+    : `<div class="card small muted">Nothing waiting. New videos from Claude appear here, or add your own below.</div>`}
+  ${runs.length ? `<div class="card" style="margin-top:14px"><h2>Recent posting runs ${running ? '<span class="chip run">running</span>' : ""}</h2><div class="runs">${runs.map(r => `<div>
+      <span class="chip ${r.status !== "completed" ? "run" : r.conclusion === "success" ? "ok" : "bad"}">${r.status !== "completed" ? "Running" : r.conclusion === "success" ? "Done" : "Failed"}</span>
+      <span>${esc(fmt(r.created_at))}</span><span class="spacer"></span><a href="${esc(r.html_url)}" target="_blank" rel="noopener">details</a></div>`).join("")}</div></div>` : ""}
+  <details class="card" style="margin-top:14px"><summary><b>➕ Add your own video</b></summary>
+    <input type="file" id="file" accept="video/mp4,video/*" style="margin-top:12px">
+    <label class="lbl">Title (just for you)</label><input id="ntitle" placeholder="e.g. How EMIs work">
+    <label class="lbl">Caption</label><textarea id="cap">${esc(DEFAULT_CAP)}</textarea>
+    <label class="lbl">Hashtags (max 5)</label><input id="ntags" placeholder="money finance india">
+    <label class="lbl">First comment (optional)</label><input id="ncom" placeholder="Question for viewers…">
     <div class="tabs"><button data-m="draft">Save draft</button><button data-m="schedule">Schedule</button><button data-m="now">Post now</button></div>
     <div id="whenBox" style="display:none"><label class="lbl">Post at (India time)</label><input type="datetime-local" id="when"></div>
     <button class="primary" id="add" style="margin-top:12px;width:100%"></button>
     <div class="bar" id="bar"><i></i></div><div class="small muted" id="prog" style="margin-top:6px"></div>
-  </div>
-  ${runs.length ? `<div class="card"><h2>Recent posting runs ${running ? '<span class="chip run">running</span>' : ""}</h2><div class="runs">${runs.map(r => `<div>
-      <span class="chip ${r.status !== "completed" ? "run" : r.conclusion === "success" ? "ok" : "bad"}">${r.status !== "completed" ? "Running" : r.conclusion === "success" ? "Done" : "Failed"}</span>
-      <span>${esc(fmt(r.created_at))}</span><span class="spacer"></span><a href="${esc(r.html_url)}" target="_blank" rel="noopener">details</a></div>`).join("")}</div></div>` : ""}
-  <h2 style="margin:18px 2px 10px">Queue (${items.length})</h2>
-  ${items.length ? items.map(m => `<div class="card">
-      <div class="row">${chip(m)}<b>${m.at ? esc(fmt(m.at)) : "Not scheduled"}</b><span class="spacer"></span><span class="small muted">${esc(m.name || m.id)}</span></div>
-      ${m.error ? `<div class="small" style="color:var(--bad);margin-top:8px">${esc(m.error)}</div>` : ""}
-      <textarea id="c_${m.id}" style="margin-top:10px">${esc(m.caption || "")}</textarea>
-      <div class="row" style="margin-top:8px"><input type="datetime-local" id="t_${m.id}" value="${m.at ? toInput(m.at) : ""}" style="flex:1;min-width:200px">
-        <button onclick="saveItem('${m.id}')">${m.at ? "Save" : "Schedule"}</button></div>
-      <div class="row" style="margin-top:8px">
-        <button class="primary" onclick="nowItem('${m.id}')">Post now</button>
-        ${m.at ? `<button class="ghost" onclick="draftItem('${m.id}')">Unschedule</button>` : ""}
-        <button class="ghost" onclick="previewItem(this,'${m.id}')">▶ Preview</button><span class="spacer"></span>
-        <button class="danger" onclick="delItem('${m.id}')">Delete</button></div>
-      <div id="pv_${m.id}"></div>
-    </div>`).join("") : `<div class="card small muted">Nothing in the queue. Add a Reel above.</div>`}
+  </details>
   <h2 style="margin:18px 2px 10px">Posted</h2>
-  ${posted.length ? posted.slice(0, 30).map(p => `<div class="card" style="padding:12px 16px"><div class="row"><span class="chip ok">Posted</span><span class="small">${esc(fmt(p.posted))}</span><span class="spacer"></span>${p.url ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">Open on Instagram ↗</a>` : ""}</div>
-      <div class="item-cap">${esc(p.caption)}</div></div>`).join("") : `<div class="card small muted">Nothing posted yet.</div>`}
-  <div class="small muted" style="margin-top:18px">Scheduled Reels are checked every 15 minutes, and GitHub can start a few minutes late. "Post now" takes about 1–4 minutes. Videos sit at a public link until they're posted.</div>`;
+  ${posted.length ? posted.slice(0, 30).map(p => `<div class="card" style="padding:12px 16px"><div class="row"><span class="chip ok">Posted</span><b class="small">${esc(p.title || "")}</b><span class="spacer"></span><span class="small muted">${esc(fmt(p.posted))}</span></div>
+      <div class="row" style="margin-top:6px">${p.url ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">Open on Instagram ↗</a>` : ""}${p.comment_error ? `<span class="small muted">· first comment not added</span>` : ""}</div></div>`).join("") : `<div class="card small muted">Nothing posted yet.</div>`}
+  <div class="small muted" style="margin-top:18px">Scheduled Reels are checked every 15 minutes, and GitHub can start a few minutes late. "Post now" takes about 1–4 minutes.</div>`;
   const setMode = m => { MODE = m; document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.m === m));
     $("#whenBox").style.display = m === "schedule" ? "block" : "none"; $("#add").textContent = m === "now" ? "Upload & post now" : m === "schedule" ? "Upload & schedule" : "Upload as draft"; };
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setMode(b.dataset.m)); setMode(MODE);
   $("#add").onclick = addReel;
-  if (running) timer = setInterval(() => { if (!document.activeElement.matches("textarea,input")) main(); }, 15000);
+  if (running) timer = setInterval(async () => { if (!document.activeElement.matches("textarea,input") && !location.hash.startsWith("#/i/")) { DATA = null; route(); } }, 15000);
+}
+
+function itemPage(id){
+  const m = DATA.items.find(x => x.id === id);
+  if (!m) { app.innerHTML = head(true) + `<div class="card">This video isn't in the queue any more (posted or deleted). <a href="#/">Back</a></div>`; return; }
+  const tags = (m.hashtags || []);
+  app.innerHTML = head(true) + `
+  <div class="card">
+    <div class="row">${chipOf(m)}<b>${m.at ? "⏰ " + esc(fmt(m.at)) : "Not scheduled"}</b><span class="spacer"></span><span class="small muted">${esc(m.name || m.id)}</span></div>
+    ${m.error ? `<div class="small" style="color:var(--bad);margin-top:8px">Last try failed: ${esc(m.error)}</div>` : ""}
+    <div class="media">
+      <video controls playsinline preload="metadata" ${m.hasCover ? `poster="${coverUrl(m)}"` : ""} src="${PAGES}/queue/${encodeURIComponent(id)}.mp4"></video>
+      ${m.hasCover ? `<div><div class="small muted" style="margin-bottom:6px">Cover</div><img class="cover" src="${coverUrl(m)}" alt="Reel cover"></div>` : ""}
+    </div>
+  </div>
+  ${m.tip ? `<div class="card small" style="border-color:#5a4a14;background:#1d1a0e">💡 ${esc(m.tip)}</div>` : ""}
+  <div class="card">
+    <label class="lbl" style="margin-top:0">Title</label><input id="f_title" value="${esc(m.title || "")}">
+    <label class="lbl">Caption</label><textarea id="f_cap" style="min-height:220px">${esc(m.caption || "")}</textarea>
+    <label class="lbl">Hashtags <span id="tagcount"></span></label><input id="f_tags" value="${esc(tags.map(t => "#" + t).join(" "))}">
+    <label class="lbl">First comment (posted right after the Reel)</label><textarea id="f_com" style="min-height:70px">${esc(m.first_comment || "")}</textarea>
+    <label class="lbl">Audio name</label><input id="f_audio" value="${esc(m.audio_name || "")}">
+    ${(m.keywords || []).length ? `<label class="lbl">Search keywords (already used in the caption)</label><div class="row">${m.keywords.map(k => `<span class="chip">${esc(k)}</span>`).join("")}</div>` : ""}
+    <label class="lbl">Exactly what Instagram will show</label>
+    <div class="preview" id="f_prev"></div>
+    <button class="ghost" id="copy" style="margin-top:8px">📋 Copy caption + hashtags</button>
+  </div>
+  <div class="card"><h2>Post it</h2>
+    <label class="lbl" style="margin-top:0">Schedule for (India time)</label>
+    <div class="row"><input type="datetime-local" id="f_at" value="${m.at ? toInput(m.at) : ""}" style="flex:1;min-width:200px"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="b_now">🚀 Post now</button>
+      <button id="b_sched">⏰ Schedule</button>
+      <button class="ghost" id="b_save">Save changes</button>
+      ${m.at ? `<button class="ghost" id="b_unsched">Unschedule</button>` : ""}
+      <span class="spacer"></span><button class="danger" id="b_del">Delete</button></div>
+  </div>`;
+  const read = () => ({ ...metaOf(id), title: $("#f_title").value.trim(), caption: $("#f_cap").value.trim(), hashtags: tagsOf($("#f_tags").value),
+    first_comment: $("#f_com").value.trim(), audio_name: $("#f_audio").value.trim() });
+  const upd = () => { const t = tagsOf($("#f_tags").value); $("#tagcount").innerHTML = `<span style="color:${t.length > 5 ? "var(--bad)" : "var(--muted)"}">(${t.length}/5${t.length > 5 ? " - Instagram allows 5, extras are dropped" : ""})</span>`;
+    $("#f_prev").textContent = fullCaption({ caption: $("#f_cap").value, hashtags: t }); };
+  ["f_cap", "f_tags"].forEach(k => $("#" + k).oninput = upd); upd();
+  $("#copy").onclick = () => navigator.clipboard.writeText(fullCaption(read())).then(() => toast("Copied"));
+  const clean = o => { delete o.status; delete o.error; delete o.tried; return o; };
+  const save = async (meta, msg, after) => { try { await writeMeta(id, meta, msg); toast(after, 4000); DATA = null; location.hash.startsWith("#/i/") ? route() : null; } catch(e){ toast(e.message, 6000); } };
+  $("#b_save").onclick = () => save(clean({ ...read(), at: m.at || null }), "Update " + id, "Saved");
+  $("#b_sched").onclick = () => { const at = fromInput($("#f_at").value); if (!at) return toast("Pick a date and time first");
+    if (new Date(at) < new Date() && !confirm("That time has passed - it will post within ~15 minutes. OK?")) return;
+    save(clean({ ...read(), at }), "Schedule " + id, "Scheduled for " + fmt(at)); };
+  const un = $("#b_unsched"); if (un) un.onclick = () => save(clean({ ...read(), at: null }), "Unschedule " + id, "Moved back to drafts");
+  $("#b_now").onclick = async () => { if (!confirm("Post this to Instagram right now?")) return;
+    try { await writeMeta(id, clean({ ...read(), at: null }), "Post now " + id); await postNow(id); toast("Posting now - takes 1–4 minutes", 5000); DATA = null; location.hash = "#/"; } catch(e){ toast(e.message, 6000); } };
+  $("#b_del").onclick = async () => { if (!confirm("Delete this video from the queue?")) return;
+    const ch = [{ path: `queue/${id}.mp4`, del: true }, { path: `queue/${id}.json`, del: true }]; if (m.hasCover) ch.push({ path: `queue/${id}.jpg`, del: true });
+    try { await commit(ch, "Delete " + id); toast("Deleted"); DATA = null; location.hash = "#/"; } catch(e){ toast(e.message, 6000); } };
 }
 
 async function addReel(){
@@ -193,42 +269,17 @@ async function addReel(){
     prog.textContent = `Uploading ${(f.size / 1e6).toFixed(1)} MB…`;
     const sha = await uploadBlob(f, p => { bar.firstChild.style.width = Math.round(p * 100) + "%"; prog.textContent = `Uploading… ${Math.round(p * 100)}%`; });
     prog.textContent = "Saving…";
-    const meta = { name: f.name, caption: $("#cap").value.trim(), at, created: new Date().toISOString() };
+    const meta = { name: f.name, title: $("#ntitle").value.trim(), caption: $("#cap").value.trim(), hashtags: tagsOf($("#ntags").value).slice(0, 5),
+      first_comment: $("#ncom").value.trim(), at, created: new Date().toISOString() };
     await commit([{ path: `queue/${id}.mp4`, sha }, { path: `queue/${id}.json`, text: JSON.stringify(meta, null, 1) + "\n" }], `Add ${f.name}`);
     if (MODE === "now") { await postNow(id); toast("Uploaded - posting now (1–4 min)", 5000); }
     else toast(at ? "Scheduled for " + fmt(at) : "Saved as draft", 4000);
-    MODE = "draft"; main();
+    MODE = "draft"; DATA = null; route();
   } catch(e){ toast(e.message, 6000); btn.disabled = false; bar.style.display = "none"; prog.textContent = ""; }
 }
-const metaOf = id => { const m = DATA.items.find(x => x.id === id) || {}; const { id: _i, size: _s, ...rest } = m; return rest; };
+const metaOf = id => { const m = DATA.items.find(x => x.id === id) || {}; const { id: _i, size: _s, hasCover: _c, ...rest } = m; return rest; };
 async function writeMeta(id, meta, msg){ await commit([{ path: `queue/${id}.json`, text: JSON.stringify(meta, null, 1) + "\n" }], msg); }
-async function saveItem(id){
-  const at = fromInput($("#t_" + id).value);
-  if (at && new Date(at) < new Date() && !confirm("That time has already passed - it will post within ~15 minutes. OK?")) return;
-  const meta = { ...metaOf(id), caption: $("#c_" + id).value.trim(), at }; delete meta.status; delete meta.error;
-  try { await writeMeta(id, meta, "Update " + id); toast(at ? "Scheduled for " + fmt(at) : "Saved", 3500); main(); } catch(e){ toast(e.message, 6000); }
-}
-async function draftItem(id){
-  const meta = { ...metaOf(id), caption: $("#c_" + id).value.trim(), at: null }; delete meta.status; delete meta.error;
-  try { await writeMeta(id, meta, "Unschedule " + id); toast("Moved back to drafts"); main(); } catch(e){ toast(e.message, 6000); }
-}
-async function nowItem(id){
-  if (!confirm("Post this to Instagram right now?")) return;
-  try {
-    const old = metaOf(id), cap = $("#c_" + id).value.trim();
-    if (cap !== (old.caption || "") || old.status) { const meta = { ...old, caption: cap }; delete meta.status; delete meta.error; await writeMeta(id, meta, "Update " + id); }
-    await postNow(id); toast("Posting now - takes 1–4 minutes", 5000); setTimeout(main, 4000);
-  } catch(e){ toast(e.message, 6000); }
-}
-async function delItem(id){
-  if (!confirm("Delete this from the queue?")) return;
-  try { await commit([{ path: `queue/${id}.mp4`, del: true }, { path: `queue/${id}.json`, del: true }], "Delete " + id); toast("Deleted"); main(); } catch(e){ toast(e.message, 6000); }
-}
-function previewItem(btn, id){
-  const box = $("#pv_" + id); if (box.innerHTML) { box.innerHTML = ""; return; }
-  box.innerHTML = `<video controls playsinline preload="metadata" src="${PAGES}/queue/${encodeURIComponent(id)}.mp4"></video><div class="small muted">Just uploaded? The preview appears after about a minute.</div>`;
-}
-main();
+route();
 </script>
 </body>
 </html>

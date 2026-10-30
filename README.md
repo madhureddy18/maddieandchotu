@@ -2,10 +2,13 @@
 
 Your own free website for posting Reels to **@maddieandchotu**: **https://madhureddy18.github.io/maddieandchotu/**
 
-- Upload a video, write the caption, then **Save draft**, **Schedule** (pick a date + time), or **Post now**.
+- Videos made by Claude land in `queue/` ready to go: title, caption, 5 hashtags (Instagram's limit), first comment, audio name, cover image and a posting tip. Tap one, check it, then **Post now** or **Schedule**.
+- You can also add your own video from the site.
 - Nothing posts unless you schedule it or press Post now.
 - Scheduled Reels are checked every 15 minutes (GitHub can start a few minutes late). Post now takes ~1–4 minutes.
 - Posted Reels show up under "Posted" with a link to Instagram.
+
+`tools/make_cover.py` makes a cover (frame + title).
 
 How it works: the site saves videos into `queue/` in this repo; GitHub Actions (`.github/workflows/post.yml`) posts them with the official Instagram API. Free, no servers.
 
