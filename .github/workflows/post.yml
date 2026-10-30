@@ -1,11 +1,17 @@
-name: Post next Reel
+name: Post Reels
+
+# Started by the website's "Post now" button (with an id), and every 15 minutes to post anything you scheduled.
+# Nothing is ever posted unless you scheduled it or pressed "Post now" on the website.
 
 on:
   schedule:
-    - cron: "30 2 * * *"    # 08:00 India time
-    - cron: "0 14 * * *"    # 19:30 India time
-  workflow_dispatch:         # "Run workflow" button = post the next one right now
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
     inputs:
+      id:
+        description: "Video id to post now (empty = whatever is scheduled and due)"
+        type: string
+        default: ""
       dry_run:
         description: "Dry run (check only, don't post)"
         type: boolean
@@ -21,20 +27,28 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: pip install -q requests
-      - name: Post to Instagram
+      - name: Anything to do?
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "go=1" >> $GITHUB_OUTPUT; exit 0; fi
+          if python3 -c "import post,sys; sys.exit(0 if post.due_items() else 1)" 2>/dev/null; then echo "go=1" >> $GITHUB_OUTPUT; else echo "Nothing scheduled right now."; fi
+      - if: steps.check.outputs.go == '1'
+        name: Post to Instagram
         env:
           IG_TOKEN: ${{ secrets.MADDIEANDCHOTUIGTOKEN }}
+          POST_ID: ${{ inputs.id }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python post.py
-      - name: Remove posted video from the queue
+      - if: always() && steps.check.outputs.go == '1'
+        name: Update the queue
         run: |
           git config user.name "maddieandchotu-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A queue posted.md
+          git add -A queue posted.json
           if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
-          git commit -m "Posted $(date -u +%F)"
+          git commit -m "Post update $(date -u +%F' '%H:%M)"
           for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 5; done

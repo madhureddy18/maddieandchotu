@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1412">
+<meta name="robots" content="noindex">
+<title>Maddie & Chotu Studio</title>
+<style>
+:root{--bg:#0b1412;--panel:#12201d;--panel2:#1a2c28;--line:#24403a;--text:#eef5f2;--muted:#93aba4;--accent:#ffc53d;--ink:#2a1d00;--ok:#3ecf8e;--bad:#ff6b6b;--blue:#8fb3ff;--r:16px}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+.wrap{max-width:760px;margin:0 auto;padding:16px 16px 80px}
+header{display:flex;align-items:center;gap:10px;padding:6px 0 18px}
+.logo{width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe08a,#ffc53d 55%,#d99a0b);box-shadow:0 0 18px #ffc53d55;flex:none}
+h1{font-size:19px;margin:0;line-height:1.2} h1 small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+h2{font-size:16px;margin:0 0 10px}
+.spacer{flex:1}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:11px 15px;background:var(--panel2);color:var(--text)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);color:var(--ink);font-weight:700}
+button.ghost{background:transparent;border:1px solid var(--line)}
+button.danger{background:transparent;color:var(--bad);border:1px solid #4a2a2a}
+input,textarea{font:inherit;width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:11px}
+textarea{resize:vertical;min-height:96px}
+input[type=file]{padding:9px}
+label.lbl{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+.muted{color:var(--muted)} .small{font-size:13px}
+.chip{display:inline-block;font-size:12px;padding:3px 10px;border-radius:99px;background:var(--panel2);color:var(--muted);white-space:nowrap;font-weight:600}
+.chip.wait{background:#1d2433;color:var(--blue)} .chip.ok{background:#12291f;color:var(--ok)} .chip.bad{background:#2c1616;color:var(--bad)} .chip.run{background:#2a2412;color:var(--accent)}
+.tabs{display:flex;gap:6px;margin:10px 0 4px} .tabs button{flex:1;padding:10px 6px;font-size:14px}
+.tabs button.on{background:var(--accent);color:var(--ink);font-weight:700}
+.bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:10px;display:none} .bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#000c;border:1px solid var(--line);padding:11px 16px;border-radius:12px;display:none;max-width:92vw;z-index:9}
+.item-cap{white-space:pre-wrap;font-size:13px;color:var(--muted);margin-top:8px;max-height:4.5em;overflow:hidden}
+video{width:100%;max-height:420px;border-radius:12px;background:#000;margin-top:10px}
+.runs div{display:flex;gap:8px;align-items:center;font-size:13px;padding:6px 0;border-top:1px solid var(--line)}
+.runs div:first-child{border-top:0}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="toast"></div>
+<script>
+const OWNER = "madhureddy18", REPO = "maddieandchotu", API = "https://api.github.com", PAGES = `https://${OWNER}.github.io/${REPO}`;
+const $ = s => document.querySelector(s), app = $("#app");
+const esc = s => (s ?? "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); } catch(e){} } };
+let TOKEN = store.get("mc_token") || "", timer = null, DATA = null;
+const DEFAULT_CAP = "\n\nFollow for one money question every day 💰\n#money #finance #india #3danimation";
+function toast(m, ms=3000){ const t=$("#toast"); t.textContent=m; t.style.display="block"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", ms); }
+const fmt = iso => { try { return new Date(iso).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}); } catch(e){ return iso; } };
+const toInput = iso => new Date(new Date(iso).getTime() + 330*60000).toISOString().slice(0,16);
+const fromInput = v => v ? v + ":00+05:30" : null;
+const b64 = s => btoa(unescape(encodeURIComponent(s)));
+
+async function gh(path, opts={}){
+  const r = await fetch(path.startsWith("http") ? path : API + path, { ...opts, headers: { Authorization: "Bearer " + TOKEN,
+    Accept: opts.raw ? "application/vnd.github.raw+json" : "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+    ...(opts.body ? {"Content-Type":"application/json"} : {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined, cache: "no-store" });
+  if (r.status === 404 && opts.allow404) return null;
+  if (!r.ok) { let m = ""; try { m = (await r.json()).message; } catch(e){} throw new Error(r.status === 401 ? "GitHub token is wrong or expired" : (m || "GitHub error " + r.status) + (r.status === 403 || r.status === 404 ? " (check the token has Contents + Actions: Read and write)" : "")); }
+  if (r.status === 204) return {};
+  return opts.raw ? r.text() : r.json();
+}
+const R = `/repos/${OWNER}/${REPO}`;
+
+// upload a big file as a git blob, with a progress bar
+function uploadBlob(file, onProgress){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("Couldn't read the file"));
+    fr.onload = () => {
+      const x = new XMLHttpRequest();
+      x.open("POST", API + R + "/git/blobs");
+      x.setRequestHeader("Authorization", "Bearer " + TOKEN); x.setRequestHeader("Accept", "application/vnd.github+json"); x.setRequestHeader("Content-Type", "application/json");
+      x.upload.onprogress = e => e.lengthComputable && onProgress(e.loaded / e.total);
+      x.onload = () => x.status < 300 ? resolve(JSON.parse(x.responseText).sha) : reject(new Error("Upload failed (" + x.status + ")"));
+      x.onerror = () => reject(new Error("Upload failed - check your connection"));
+      x.send(JSON.stringify({ content: fr.result.split(",")[1], encoding: "base64" }));
+    };
+    fr.readAsDataURL(file);
+  });
+}
+// one commit with several changes: [{path, text}|{path, sha}|{path, del:true}]
+async function commit(changes, message){
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const ref = await gh(R + "/git/ref/heads/main"), head = ref.object.sha;
+    const base = (await gh(R + "/git/commits/" + head)).tree.sha;
+    const tree = [];
+    for (const c of changes) {
+      if (c.del) tree.push({ path: c.path, mode: "100644", type: "blob", sha: null });
+      else if (c.sha) tree.push({ path: c.path, mode: "100644", type: "blob", sha: c.sha });
+      else tree.push({ path: c.path, mode: "100644", type: "blob", content: c.text });
+    }
+    const t = await gh(R + "/git/trees", { method: "POST", body: { base_tree: base, tree } });
+    const cm = await gh(R + "/git/commits", { method: "POST", body: { message, tree: t.sha, parents: [head] } });
+    try { await gh(R + "/git/refs/heads/main", { method: "PATCH", body: { sha: cm.sha } }); return; }
+    catch(e){ if (attempt === 3) throw e; await new Promise(r => setTimeout(r, 1500)); }
+  }
+}
+const postNow = id => gh(R + "/actions/workflows/post.yml/dispatches", { method: "POST", body: { ref: "main", inputs: { id, dry_run: false } } });
+
+async function load(){
+  const list = (await gh(R + "/contents/queue?ref=main", { allow404: true })) || [];
+  const vids = list.filter(f => f.name.endsWith(".mp4"));
+  const items = await Promise.all(vids.map(async v => {
+    const id = v.name.slice(0, -4), j = list.find(f => f.name === id + ".json");
+    let meta = {}; if (j) { try { meta = JSON.parse(await gh(R + "/contents/queue/" + j.name + "?ref=main", { raw: true })); } catch(e){} }
+    return { id, size: v.size, ...meta };
+  }));
+  items.sort((a, b) => (a.at || "9999") < (b.at || "9999") ? -1 : 1);
+  let posted = []; try { posted = JSON.parse((await gh(R + "/contents/posted.json?ref=main", { raw: true, allow404: true })) || "[]"); } catch(e){}
+  let runs = []; try { runs = (await gh(R + "/actions/workflows/post.yml/runs?per_page=30")).workflow_runs.filter(r => r.event === "workflow_dispatch" || r.conclusion === "failure").slice(0, 5); } catch(e){}
+  return { items, posted, runs };
+}
+
+function tokenPage(msg){
+  clearInterval(timer);
+  app.innerHTML = head() + `<div class="card"><h2>Connect your GitHub</h2>
+    <div class="small muted">Paste a fine-grained GitHub token for the <b>${REPO}</b> repo with <b>Contents</b> and <b>Actions</b> set to <b>Read and write</b>. It's saved only in this browser.</div>
+    ${msg ? `<div class="small" style="color:var(--bad);margin-top:8px">${esc(msg)}</div>` : ""}
+    <input id="tok" type="password" placeholder="github_pat_..." style="margin-top:12px" autocomplete="off">
+    <button class="primary" id="go" style="margin-top:10px;width:100%">Connect</button></div>`;
+  $("#go").onclick = async () => { TOKEN = $("#tok").value.trim(); if (!TOKEN) return;
+    try { await gh(R); store.set("mc_token", TOKEN); main(); } catch(e){ tokenPage(e.message); } };
+}
+const head = () => `<header><div class="logo"></div><h1>Maddie & Chotu Studio<small>@maddieandchotu · Instagram</small></h1><span class="spacer"></span>
+  ${TOKEN ? `<button class="ghost" onclick="main()" aria-label="Refresh">↻</button><button class="ghost" onclick="logout()">Log out</button>` : ""}</header>`;
+function logout(){ if (!confirm("Log out on this device?")) return; store.set("mc_token", null); TOKEN = ""; tokenPage(); }
+
+let MODE = "draft";
+async function main(){
+  clearInterval(timer);
+  if (!TOKEN) return tokenPage();
+  if (!DATA) app.innerHTML = head() + `<div class="card muted">Loading…</div>`;
+  try { DATA = await load(); } catch(e){ if (/token/.test(e.message)) return tokenPage(e.message); app.innerHTML = head() + `<div class="card">${esc(e.message)}</div>`; return; }
+  const { items, posted, runs } = DATA;
+  const running = runs.some(r => r.status !== "completed");
+  const chip = m => m.status === "failed" ? `<span class="chip bad">Failed</span>` : m.at ? `<span class="chip wait">Scheduled</span>` : `<span class="chip">Draft</span>`;
+  app.innerHTML = head() + `
+  <div class="card"><h2>➕ New Reel</h2>
+    <input type="file" id="file" accept="video/mp4,video/*">
+    <label class="lbl">Caption + hashtags</label>
+    <textarea id="cap">${esc(DEFAULT_CAP)}</textarea>
+    <div class="tabs"><button data-m="draft">Save draft</button><button data-m="schedule">Schedule</button><button data-m="now">Post now</button></div>
+    <div id="whenBox" style="display:none"><label class="lbl">Post at (India time)</label><input type="datetime-local" id="when"></div>
+    <button class="primary" id="add" style="margin-top:12px;width:100%"></button>
+    <div class="bar" id="bar"><i></i></div><div class="small muted" id="prog" style="margin-top:6px"></div>
+  </div>
+  ${runs.length ? `<div class="card"><h2>Recent posting runs ${running ? '<span class="chip run">running</span>' : ""}</h2><div class="runs">${runs.map(r => `<div>
+      <span class="chip ${r.status !== "completed" ? "run" : r.conclusion === "success" ? "ok" : "bad"}">${r.status !== "completed" ? "Running" : r.conclusion === "success" ? "Done" : "Failed"}</span>
+      <span>${esc(fmt(r.created_at))}</span><span class="spacer"></span><a href="${esc(r.html_url)}" target="_blank" rel="noopener">details</a></div>`).join("")}</div></div>` : ""}
+  <h2 style="margin:18px 2px 10px">Queue (${items.length})</h2>
+  ${items.length ? items.map(m => `<div class="card">
+      <div class="row">${chip(m)}<b>${m.at ? esc(fmt(m.at)) : "Not scheduled"}</b><span class="spacer"></span><span class="small muted">${esc(m.name || m.id)}</span></div>
+      ${m.error ? `<div class="small" style="color:var(--bad);margin-top:8px">${esc(m.error)}</div>` : ""}
+      <textarea id="c_${m.id}" style="margin-top:10px">${esc(m.caption || "")}</textarea>
+      <div class="row" style="margin-top:8px"><input type="datetime-local" id="t_${m.id}" value="${m.at ? toInput(m.at) : ""}" style="flex:1;min-width:200px">
+        <button onclick="saveItem('${m.id}')">${m.at ? "Save" : "Schedule"}</button></div>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" onclick="nowItem('${m.id}')">Post now</button>
+        ${m.at ? `<button class="ghost" onclick="draftItem('${m.id}')">Unschedule</button>` : ""}
+        <button class="ghost" onclick="previewItem(this,'${m.id}')">▶ Preview</button><span class="spacer"></span>
+        <button class="danger" onclick="delItem('${m.id}')">Delete</button></div>
+      <div id="pv_${m.id}"></div>
+    </div>`).join("") : `<div class="card small muted">Nothing in the queue. Add a Reel above.</div>`}
+  <h2 style="margin:18px 2px 10px">Posted</h2>
+  ${posted.length ? posted.slice(0, 30).map(p => `<div class="card" style="padding:12px 16px"><div class="row"><span class="chip ok">Posted</span><span class="small">${esc(fmt(p.posted))}</span><span class="spacer"></span>${p.url ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">Open on Instagram ↗</a>` : ""}</div>
+      <div class="item-cap">${esc(p.caption)}</div></div>`).join("") : `<div class="card small muted">Nothing posted yet.</div>`}
+  <div class="small muted" style="margin-top:18px">Scheduled Reels are checked every 15 minutes, and GitHub can start a few minutes late. "Post now" takes about 1–4 minutes. Videos sit at a public link until they're posted.</div>`;
+  const setMode = m => { MODE = m; document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.m === m));
+    $("#whenBox").style.display = m === "schedule" ? "block" : "none"; $("#add").textContent = m === "now" ? "Upload & post now" : m === "schedule" ? "Upload & schedule" : "Upload as draft"; };
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setMode(b.dataset.m)); setMode(MODE);
+  $("#add").onclick = addReel;
+  if (running) timer = setInterval(() => { if (!document.activeElement.matches("textarea,input")) main(); }, 15000);
+}
+
+async function addReel(){
+  const f = $("#file").files[0]; if (!f) return toast("Pick a video first");
+  if (f.size > 95e6) return toast("Video is too big (max ~95 MB)");
+  const at = MODE === "schedule" ? fromInput($("#when").value) : null;
+  if (MODE === "schedule" && !at) return toast("Pick a date and time");
+  if (MODE === "schedule" && new Date(at) < new Date()) return toast("That time is in the past");
+  if (MODE === "now" && !confirm("Upload and post this to Instagram right away?")) return;
+  const btn = $("#add"), bar = $("#bar"), prog = $("#prog"); btn.disabled = true; bar.style.display = "block";
+  const slug = f.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "reel";
+  const id = slug + "-" + Date.now().toString(36);
+  try {
+    prog.textContent = `Uploading ${(f.size / 1e6).toFixed(1)} MB…`;
+    const sha = await uploadBlob(f, p => { bar.firstChild.style.width = Math.round(p * 100) + "%"; prog.textContent = `Uploading… ${Math.round(p * 100)}%`; });
+    prog.textContent = "Saving…";
+    const meta = { name: f.name, caption: $("#cap").value.trim(), at, created: new Date().toISOString() };
+    await commit([{ path: `queue/${id}.mp4`, sha }, { path: `queue/${id}.json`, text: JSON.stringify(meta, null, 1) + "\n" }], `Add ${f.name}`);
+    if (MODE === "now") { await postNow(id); toast("Uploaded - posting now (1–4 min)", 5000); }
+    else toast(at ? "Scheduled for " + fmt(at) : "Saved as draft", 4000);
+    MODE = "draft"; main();
+  } catch(e){ toast(e.message, 6000); btn.disabled = false; bar.style.display = "none"; prog.textContent = ""; }
+}
+const metaOf = id => { const m = DATA.items.find(x => x.id === id) || {}; const { id: _i, size: _s, ...rest } = m; return rest; };
+async function writeMeta(id, meta, msg){ await commit([{ path: `queue/${id}.json`, text: JSON.stringify(meta, null, 1) + "\n" }], msg); }
+async function saveItem(id){
+  const at = fromInput($("#t_" + id).value);
+  if (at && new Date(at) < new Date() && !confirm("That time has already passed - it will post within ~15 minutes. OK?")) return;
+  const meta = { ...metaOf(id), caption: $("#c_" + id).value.trim(), at }; delete meta.status; delete meta.error;
+  try { await writeMeta(id, meta, "Update " + id); toast(at ? "Scheduled for " + fmt(at) : "Saved", 3500); main(); } catch(e){ toast(e.message, 6000); }
+}
+async function draftItem(id){
+  const meta = { ...metaOf(id), caption: $("#c_" + id).value.trim(), at: null }; delete meta.status; delete meta.error;
+  try { await writeMeta(id, meta, "Unschedule " + id); toast("Moved back to drafts"); main(); } catch(e){ toast(e.message, 6000); }
+}
+async function nowItem(id){
+  if (!confirm("Post this to Instagram right now?")) return;
+  try {
+    const old = metaOf(id), cap = $("#c_" + id).value.trim();
+    if (cap !== (old.caption || "") || old.status) { const meta = { ...old, caption: cap }; delete meta.status; delete meta.error; await writeMeta(id, meta, "Update " + id); }
+    await postNow(id); toast("Posting now - takes 1–4 minutes", 5000); setTimeout(main, 4000);
+  } catch(e){ toast(e.message, 6000); }
+}
+async function delItem(id){
+  if (!confirm("Delete this from the queue?")) return;
+  try { await commit([{ path: `queue/${id}.mp4`, del: true }, { path: `queue/${id}.json`, del: true }], "Delete " + id); toast("Deleted"); main(); } catch(e){ toast(e.message, 6000); }
+}
+function previewItem(btn, id){
+  const box = $("#pv_" + id); if (box.innerHTML) { box.innerHTML = ""; return; }
+  box.innerHTML = `<video controls playsinline preload="metadata" src="${PAGES}/queue/${encodeURIComponent(id)}.mp4"></video><div class="small muted">Just uploaded? The preview appears after about a minute.</div>`;
+}
+main();
+</script>
+</body>
+</html>
