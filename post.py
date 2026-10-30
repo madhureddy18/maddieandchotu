@@ -6,7 +6,7 @@ After posting, the video is removed from queue/ and a line is added to posted.md
 Instagram (Instagram Login API) fetches the video from a public link, so the repo is public and the video is
 served by GitHub Pages (correct video/mp4 type); raw.githubusercontent.com is the fallback.
 
-Env: IG_TOKEN (secret), GITHUB_REPOSITORY (set by Actions). Optional: DRY_RUN=1.
+Env: IG_TOKEN (from the MADDIEANDCHOTUIGTOKEN secret), GITHUB_REPOSITORY (set by Actions). Optional: DRY_RUN=1.
 """
 import datetime as dt
 import os
@@ -103,7 +103,7 @@ def main():
         return 0
     token = os.environ.get("IG_TOKEN", "").strip()
     if not token:
-        raise SystemExit("IG_TOKEN secret is missing (Settings > Secrets and variables > Actions)")
+        raise SystemExit("MADDIEANDCHOTUIGTOKEN secret is missing (Settings > Secrets and variables > Actions)")
     last = None
     for url in urls:
         try:

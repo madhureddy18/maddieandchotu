@@ -27,7 +27,7 @@ jobs:
       - run: pip install -q requests
       - name: Post to Instagram
         env:
-          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          IG_TOKEN: ${{ secrets.MADDIEANDCHOTUIGTOKEN }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python post.py
       - name: Remove posted video from the queue

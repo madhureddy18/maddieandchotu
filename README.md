@@ -11,7 +11,8 @@ Free Instagram Reels auto-posting with GitHub Actions. No servers.
 
 ## One-time setup
 1. Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)` → Save.
-2. Settings → Secrets and variables → Actions → New secret `IG_TOKEN` = your @maddieandchotu Instagram token.
-3. (Recommended) Secret `GH_PAT` = fine-grained GitHub token for this repo with *Secrets: Read and write*, so the weekly job can keep the Instagram token alive forever.
+2. Settings → Secrets and variables → Actions:
+   - `MADDIEANDCHOTUIGTOKEN` = the @maddieandchotu Instagram token.
+   - `IG_TOKEN` = a fine-grained **GitHub** token for this repo with *Secrets: Read and write* (lets the weekly job keep the Instagram token alive).
 
 Note: the repo is public because Instagram downloads the video from a public link. Videos are visible here until they're posted.
