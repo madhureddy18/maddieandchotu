@@ -1,0 +1,40 @@
+name: Post next Reel
+
+on:
+  schedule:
+    - cron: "30 2 * * *"    # 08:00 India time
+    - cron: "0 14 * * *"    # 19:30 India time
+  workflow_dispatch:         # "Run workflow" button = post the next one right now
+    inputs:
+      dry_run:
+        description: "Dry run (check only, don't post)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: post-reel
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q requests
+      - name: Post to Instagram
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: python post.py
+      - name: Remove posted video from the queue
+        run: |
+          git config user.name "maddieandchotu-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A queue posted.md
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          git commit -m "Posted $(date -u +%F)"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 5; done
